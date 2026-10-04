@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Ink — Drawing</title>
+<meta name="description" content="A minimalist drawing tool. Sketch with pen, marker and eraser, then save as PNG.">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<style>
+:root{
+  --bg:#ffffff; --ink:#111111; --muted:#8a8a8a; --line:#e8e8e8; --soft:#f4f4f4; --radius:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0d0d0d; --ink:#f2f2f2; --muted:#8f8f8f; --line:#262626; --soft:#1a1a1a; }
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ height:100%; }
+body{
+  margin:0; background:var(--bg); color:var(--ink); overscroll-behavior:none;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Helvetica,Arial,sans-serif;
+  display:flex; flex-direction:column; height:100dvh; overflow:hidden;
+  max-width:640px; margin:0 auto;
+}
+header{
+  flex:none; display:flex; align-items:center; gap:8px;
+  padding:10px 12px; border-bottom:1px solid var(--line);
+}
+header img{ width:34px; height:34px; border-radius:9px; }
+header h1{ margin:0; font-size:18px; font-weight:700; letter-spacing:-0.2px; flex:1; }
+.icbtn{
+  border:1px solid var(--line); background:var(--bg); color:var(--ink);
+  width:42px; height:42px; border-radius:12px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; flex:none;
+}
+.icbtn:active{ background:var(--soft); }
+.icbtn:disabled{ opacity:0.3; }
+.icbtn svg{ width:20px; height:20px; }
+.icbtn.save{ background:var(--ink); color:var(--bg); border-color:var(--ink); width:auto; padding:0 16px; font-weight:700; font-size:14px; font-family:inherit; }
+#stage{ flex:1; position:relative; overflow:hidden; }
+#cv{ position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; }
+#empty{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  pointer-events:none; color:var(--muted); font-size:15px;
+}
+#empty.hidden{ display:none; }
+#toolbar{ flex:none; border-top:1px solid var(--line); padding:10px 14px calc(12px + env(safe-area-inset-bottom)); background:var(--bg); }
+.trow{ display:flex; align-items:center; gap:8px; }
+.trow + .trow{ margin-top:10px; }
+.seg{ display:flex; border:1px solid var(--line); border-radius:12px; overflow:hidden; flex:none; }
+.seg button{
+  border:none; background:var(--bg); color:var(--muted); width:52px; height:42px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; font-family:inherit;
+}
+.seg button svg{ width:20px; height:20px; }
+.seg button.on{ background:var(--ink); color:var(--bg); }
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button.on + button{ border-left-color:transparent; }
+.sizewrap{ flex:1; display:flex; align-items:center; gap:8px; padding:0 4px; }
+.sizewrap svg{ width:18px; height:18px; color:var(--muted); flex:none; }
+input[type=range]{ flex:1; accent-color:var(--ink); height:42px; }
+.swatches{ display:flex; gap:10px; overflow-x:auto; padding:4px 2px; flex:1; scrollbar-width:none; }
+.swatches::-webkit-scrollbar{ display:none; }
+.sw{
+  width:34px; height:34px; border-radius:50%; flex:none; cursor:pointer; padding:0;
+  border:2px solid transparent; background-clip:padding-box; position:relative;
+}
+.sw.on{ border-color:var(--bg); box-shadow:0 0 0 2px var(--ink); }
+.sw[data-c="#ffffff"]{ border:2px solid var(--line); }
+.sw[data-c="#ffffff"].on{ border-color:var(--line); box-shadow:0 0 0 2px var(--ink); }
+.customcolor{ position:relative; width:34px; height:34px; flex:none; border-radius:50%;
+  background:conic-gradient(#f55,#fd5,#5f5,#5df,#a5f,#f55); cursor:pointer; }
+.customcolor input{ position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.paperbtn{
+  flex:none; border:1px solid var(--line); background:var(--bg); color:var(--ink);
+  border-radius:12px; height:42px; padding:0 14px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit;
+}
+.paperbtn:active{ background:var(--soft); }
+.hint{ text-align:center; font-size:11px; color:var(--muted); margin:8px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <img src="icons/icon-192.png" alt="Ink icon">
+  <h1>Ink</h1>
+  <button class="icbtn" id="undoBtn" aria-label="Undo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5L3 10l5 5"/><path d="M3 10h11a6 6 0 016 6v1"/></svg></button>
+  <button class="icbtn" id="redoBtn" aria-label="Redo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 5l5 5-5 5"/><path d="M21 10H10a6 6 0 00-6 6v1"/></svg></button>
+  <button class="icbtn" id="clearBtn" aria-label="Clear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg></button>
+  <button class="icbtn save" id="saveBtn">Save</button>
+</header>
+<div id="stage">
+  <canvas id="cv"></canvas>
+  <div id="empty">Draw here</div>
+</div>
+<div id="toolbar">
+  <div class="trow">
+    <div class="seg" id="toolSeg">
+      <button data-tool="pen" class="on" aria-label="Pen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l1-4.5L16.5 4a2.1 2.1 0 013 3L8 18.5 4 20z"/><path d="M14.5 6l3 3"/></svg></button>
+      <button data-tool="marker" aria-label="Marker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l-5.5 5.5a2.1 2.1 0 003 3L12 14"/><path d="M9 11l3-3 5 5-3 3-5-5z"/><path d="M14 6l2-2a2.1 2.1 0 013 3l-2 2"/></svg></button>
+      <button data-tool="eraser" aria-label="Eraser"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 20h11"/><path d="M5 15l8.5-8.5a2.1 2.1 0 013 3L11 15l-3 3H5v-3z"/></svg></button>
+    </div>
+    <div class="sizewrap">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>
+      <input type="range" id="sizeRange" min="1" max="40" value="8" aria-label="Brush size">
+      <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+    </div>
+  </div>
+  <div class="trow">
+    <div class="swatches" id="swatches"></div>
+    <button class="paperbtn" id="paperBtn">Dark paper</button>
+  </div>
+  <p class="hint">Stylus pressure supported · drawing auto-saves on this device</p>
+</div>
+<script>
+"use strict";
+const cv = document.getElementById('cv'), stage = document.getElementById('stage');
+const emptyEl = document.getElementById('empty');
+let ctx = cv.getContext('2d');
+let AC = ctx; // active context used by paint routines (swapped for export)
+let W = 0, H = 0, dpr = 1;
+let strokes = [], undone = [], cur = null;
+let tool = 'pen', color = '#111111', size = 8, paper = '#ffffff';
+
+/* ---------- painting ---------- */
+function applyStyle(s, w) {
+  AC.lineCap = 'round'; AC.lineJoin = 'round';
+  if (s.tool === 'eraser') {
+    AC.globalCompositeOperation = 'destination-out';
+    AC.globalAlpha = 1; AC.strokeStyle = '#000'; AC.fillStyle = '#000'; AC.lineWidth = w;
+  } else if (s.tool === 'marker') {
+    AC.globalCompositeOperation = 'source-over';
+    AC.globalAlpha = 0.35; AC.strokeStyle = s.color; AC.fillStyle = s.color; AC.lineWidth = w;
+  } else {
+    AC.globalCompositeOperation = 'source-over';
+    AC.globalAlpha = 1; AC.strokeStyle = s.color; AC.fillStyle = s.color; AC.lineWidth = w;
+  }
+}
+function wFor(s, p) {
+  const base = s.tool === 'pen' ? s.size : s.size * 2.2;
+  return (s.tool === 'pen' && p.p > 0) ? base * (0.35 + 0.65 * p.p) : base;
+}
+function paintPoint(s, p) {
+  applyStyle(s, wFor(s, p));
+  AC.beginPath(); AC.arc(p.x, p.y, Math.max(0.5, wFor(s, p) / 2), 0, 7); AC.fill();
+  AC.globalAlpha = 1; AC.globalCompositeOperation = 'source-over';
+}
+function paintSeg(s, i) {
+  const pts = s.pts, a = pts[i - 1], b = pts[i];
+  applyStyle(s, wFor(s, b));
+  AC.beginPath();
+  if (i === 1) { AC.moveTo(a.x, a.y); AC.lineTo(b.x, b.y); }
+  else {
+    const c = pts[i - 2];
+    AC.moveTo((c.x + a.x) / 2, (c.y + a.y) / 2);
+    AC.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
+  }
+  AC.stroke();
+  AC.globalAlpha = 1; AC.globalCompositeOperation = 'source-over';
+}
+function paintStrokeFull(s) {
+  const n = s.pts.length;
+  if (!n) return;
+  paintPoint(s, s.pts[0]);
+  for (let i = 1; i < n; i++) paintSeg(s, i);
+}
+function redrawAll(c2d, list, Wd, Hd, dprV, paperV) {
+  AC = c2d;
+  AC.setTransform(dprV, 0, 0, dprV, 0, 0);
+  AC.fillStyle = paperV; AC.fillRect(0, 0, Wd, Hd);
+  for (const s of list) {
+    if (s.clear) { AC.fillStyle = paperV; AC.fillRect(0, 0, Wd, Hd); }
+    else paintStrokeFull(s);
+  }
+  AC.globalAlpha = 1; AC.globalCompositeOperation = 'source-over';
+  AC = ctx;
+}
+function redraw() {
+  redrawAll(ctx, strokes, W, H, dpr, paper);
+  syncUI();
+}
+
+/* ---------- input ---------- */
+function point(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure > 0 ? e.pressure : 0.5 };
+}
+cv.addEventListener('pointerdown', e => {
+  if (!e.isPrimary) return;
+  e.preventDefault();
+  try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  const evts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  cur = { tool, color, size, pts: evts.map(point) };
+  undone = [];
+  const n = cur.pts.length;
+  paintPoint(cur, cur.pts[0]);
+  for (let i = 1; i < n; i++) paintSeg(cur, i);
+  syncUI();
+});
+cv.addEventListener('pointermove', e => {
+  if (!cur || !e.isPrimary) return;
+  e.preventDefault();
+  const evts = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  for (const ev of evts) { cur.pts.push(point(ev)); paintSeg(cur, cur.pts.length - 1); }
+});
+function finishStroke() {
+  if (!cur) return;
+  strokes.push(cur); cur = null;
+  save(); syncUI();
+}
+cv.addEventListener('pointerup', finishStroke);
+cv.addEventListener('pointercancel', finishStroke);
+document.addEventListener('pointerup', () => { if (cur) finishStroke(); });
+
+/* ---------- history ---------- */
+function undo() {
+  if (!strokes.length) return;
+  undone.push(strokes.pop()); redraw(); save();
+}
+function redo() {
+  if (!undone.length) return;
+  strokes.push(undone.pop()); redraw(); save();
+}
+function clearAll() {
+  if (!strokes.length && !cur) return;
+  if (cur) finishStroke();
+  strokes.push({ clear: true }); undone = [];
+  redraw(); save();
+}
+document.getElementById('undoBtn').addEventListener('click', undo);
+document.getElementById('redoBtn').addEventListener('click', redo);
+document.getElementById('clearBtn').addEventListener('click', clearAll);
+
+/* ---------- export ---------- */
+document.getElementById('saveBtn').addEventListener('click', () => {
+  if (cur) finishStroke();
+  const out = document.createElement('canvas');
+  out.width = cv.width; out.height = cv.height;
+  redrawAll(out.getContext('2d'), strokes, W, H, dpr, paper);
+  const a = document.createElement('a');
+  a.href = out.toDataURL('image/png');
+  a.download = 'ink-drawing.png';
+  document.body.appendChild(a); a.click(); a.remove();
+});
+
+/* ---------- toolbar ---------- */
+const COLORS = ['#111111', '#6b7280', '#ffffff', '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6'];
+const swWrap = document.getElementById('swatches');
+COLORS.forEach((c, i) => {
+  const b = document.createElement('button');
+  b.className = 'sw' + (i === 0 ? ' on' : '');
+  b.style.background = c; b.dataset.c = c; b.setAttribute('aria-label', 'Color ' + c);
+  b.addEventListener('click', () => { setColor(c); });
+  swWrap.appendChild(b);
+});
+const customWrap = document.createElement('label');
+customWrap.className = 'customcolor'; customWrap.title = 'Custom color';
+const customInput = document.createElement('input');
+customInput.type = 'color'; customInput.value = '#111111';
+customInput.addEventListener('input', () => setColor(customInput.value, true));
+customWrap.appendChild(customInput);
+swWrap.appendChild(customWrap);
+function setColor(c, isCustom) {
+  color = c;
+  document.querySelectorAll('.sw').forEach(s => s.classList.toggle('on', !isCustom && s.dataset.c === c));
+}
+document.querySelectorAll('#toolSeg button').forEach(b => {
+  b.addEventListener('click', () => {
+    tool = b.dataset.tool;
+    document.querySelectorAll('#toolSeg button').forEach(x => x.classList.toggle('on', x === b));
+  });
+});
+document.getElementById('sizeRange').addEventListener('input', e => { size = +e.target.value; });
+const paperBtn = document.getElementById('paperBtn');
+paperBtn.addEventListener('click', () => {
+  paper = paper === '#ffffff' ? '#161616' : '#ffffff';
+  paperBtn.textContent = paper === '#ffffff' ? 'Dark paper' : 'Light paper';
+  redraw(); save();
+});
+
+/* ---------- persistence ---------- */
+function save() {
+  try {
+    const j = JSON.stringify({ paper, strokes });
+    if (j.length < 4e6) localStorage.setItem('ink-v1', j);
+  } catch (e) {}
+}
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem('ink-v1'));
+    if (d) {
+      paper = d.paper || '#ffffff';
+      strokes = Array.isArray(d.strokes) ? d.strokes : [];
+    }
+  } catch (e) {}
+}
+
+/* ---------- layout ---------- */
+function resize() {
+  dpr = window.devicePixelRatio || 1;
+  W = stage.clientWidth; H = stage.clientHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  redraw();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 100));
+
+function syncUI() {
+  document.getElementById('undoBtn').disabled = !strokes.length;
+  document.getElementById('redoBtn').disabled = !undone.length;
+  emptyEl.classList.toggle('hidden', strokes.length > 0 || !!cur);
+}
+
+load();
+if (paper !== '#ffffff') paperBtn.textContent = 'Light paper';
+requestAnimationFrame(resize);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+</script>
+</body>
+</html>
